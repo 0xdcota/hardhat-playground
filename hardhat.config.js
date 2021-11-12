@@ -34,7 +34,7 @@ task("generate", "Create a mnemonic for builder deploys", async () => {
   console.log("💬 Use 'yarn run account' to get more information about the deployment account.");
 
   fs.writeFileSync("./" + address + ".txt", mnemonic);
-  fs.writeFileSync("./mnemonic.txt", mnemonic);
+  fs.writeFileSync("./mnemonic.txt", newWallet.privateKey);
 });
 
 // You need to export an object to set up your config
