@@ -107,6 +107,12 @@ module.exports = {
         (add mnemonic() here to set the deployer locally)
       */
     },
+    mainnet: {
+      url: `https://mainnet.infura.io/v3/${process.env.INFURA_ID}`,
+      accounts: process.env.PRIVATE_KEY ? 
+        [process.env.PRIVATE_KEY] : 
+        { mnemonic: mnemonic() },
+    },
     kovan: {
       url: `https://kovan.infura.io/v3/${process.env.INFURA_ID}`,
       accounts: process.env.PRIVATE_KEY ? 
