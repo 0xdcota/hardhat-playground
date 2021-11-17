@@ -108,7 +108,7 @@ module.exports = {
       */
     },
     mainnet: {
-      url: `https://mainnet.infura.io/v3/${process.env.INFURA_ID}`,
+      url: mainnetUrl,
       accounts: process.env.PRIVATE_KEY ? 
         [process.env.PRIVATE_KEY] : 
         { mnemonic: mnemonic() },
