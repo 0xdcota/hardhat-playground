@@ -2,8 +2,9 @@
 pragma solidity ^0.8.0;
 
 import "hardhat/console.sol";
+import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Upgrade.sol";
 
-contract Greeter {
+contract Greeter is ERC1967Upgrade {
     string private greeting;
 
     constructor(string memory _greeting) {
