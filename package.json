@@ -23,7 +23,10 @@
   },
   "homepage": "https://github.com/DaigaroCota/hardhat-playground#readme",
   "dependencies": {
-    "hardhat": "^2.6.8"
+    "@openzeppelin/contracts": "^4.5.0",
+    "hardhat": "^2.6.8",
+    "keccak256": "^1.0.6",
+    "merkletreejs": "^0.2.27"
   },
   "devDependencies": {
     "@nomiclabs/hardhat-ethers": "^2.0.0",
