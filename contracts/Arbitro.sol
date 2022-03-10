@@ -4,10 +4,13 @@ pragma solidity 0.8.4;
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 import "./interfaces/IUniswapV2Pair.sol";
-import "./interfaces/IUniswapV2Router01.sol";
+import "./interfaces/IUniswapV2Router02.sol";
+import "./interfaces/IUniswapV2Factory.sol";
 import "./interfaces/IBalancerVault.sol";
 import "./interfaces/IFlashLoanRecipient.sol";
 import "@openzeppelin/contracts/interfaces/IERC20.sol";
+
+import "hardhat/console.sol";
 
 contract Arbitro is Ownable, IFlashLoanRecipient {
 
@@ -15,10 +18,20 @@ contract Arbitro is Ownable, IFlashLoanRecipient {
         address tokenIn;
         address tokenOut;
         uint256 amountIn;
-        uint256 amountOut;
     }
 
-    address private _balancerVault;
+    struct FlashLoanOps {
+      address tokenIn;
+      address tokenOut;
+      uint256 amountIn;
+      uint256 amountOut;
+      uint256 expectRev;
+      address buyRouter;
+      address sellRouter;
+    }
+
+    address private constant _BALANCERVAULT = 0xBA12222222228d8Ba445958a75a0704d566BF2C8;
+    bytes32 private _dataHash;
 
     function withdraw(address receiver, address token) external onlyOwner {
         IERC20(token).transfer(
@@ -31,38 +44,68 @@ contract Arbitro is Ownable, IFlashLoanRecipient {
       address exchangeRouter,
       address exchangePair,
       TradeInfo memory info
-    ) public view returns(TradeInfo memory updatedInfo) {
-      require(info.tokenIn == IUniswapV2Pair(exchangePair).token0(), "001");
+    ) public view returns(uint256 amountOut) {
       (uint256 reserve0, uint256 reserve1, )= IUniswapV2Pair(exchangePair).getReserves();
-      info.amountOut = IUniswapV2Router01(exchangeRouter).getAmountOut(
+      uint reserveIn;
+      uint reserveOut;
+      if (IUniswapV2Pair(exchangePair).token0() == info.tokenIn) {
+        reserveIn = reserve0;
+        reserveOut = reserve1;
+      } else {
+        reserveIn = reserve1;
+        reserveOut = reserve0;
+      }
+      amountOut = IUniswapV2Router02(exchangeRouter).quote(
         info.amountIn,
-        reserve0,
-        reserve1
+        reserveIn,
+        reserveOut
       );
-      updatedInfo = info;
     }
 
-    function encodeInfo(
+    function getPairAddress(TradeInfo memory info, address exchangefactory) public view returns(address pair) {
+      pair = IUniswapV2Factory(exchangefactory).getPair(info.tokenIn, info.tokenOut);
+    }
+
+    function encodeTradeInfo(
       address tokenIn_,
       address tokenOut_,
-      uint128 amountIn_,
-      uint128 amountOut_
+      uint128 amountIn_
     ) public pure returns(TradeInfo memory info) {
       info.tokenIn = tokenIn_;
       info.tokenOut = tokenOut_;
       info.amountIn = amountIn_;
-      info.amountOut = amountOut_;
     }
 
-    // function initiateFlashLoan(bytes memory data) external {
-    //     data;
-    //     IBalancerVault(_balancerVault).flashLoan(
-    //         recipient,
-    //         tokens,
-    //         amounts,
-    //         userData
-    //     );
-    // }
+    function simpleTrade(
+      address exchangeRouter,
+      address tokenIn,
+      address tokenOut,
+      uint256 amountIn,
+      uint256 amountOutMin
+    ) external {
+      address[] memory path = new address[](2); 
+      path[0] = tokenIn;
+      path[1] = tokenOut;
+      IUniswapV2Router02(exchangeRouter).swapExactTokensForTokens(
+        amountIn,
+        amountOutMin,
+        path,
+        address(this),
+        // solhint-disable-next-line
+        block.timestamp
+      );
+    }
+
+    function initiateFlashLoan(FlashLoanOps memory info) external onlyOwner {
+      require(_dataHash == "", "001");
+      _dataHash = keccak256(abi.encode(info));
+      IBalancerVault(_BALANCERVAULT).flashLoan(
+          address(this),
+          info.tokenIn,
+          amounts,
+          abi.encode(info)
+      );
+    }
 
     function receiveFlashLoan(
         IERC20[] memory tokens,
@@ -70,10 +113,11 @@ contract Arbitro is Ownable, IFlashLoanRecipient {
         uint256[] memory feeAmounts,
         bytes memory userData
     ) external override {
-      tokens;
-      amounts;
-      feeAmounts;
-      userData;
-        require(msg.sender == _balancerVault, "002");
+      FlashLoanOps memory info = abi.decode(userData, FlashLoanOps);
+      require( _dataHash == keccak256(abi.encode(_info)), "002");
+      require(msg.sender == _BALANCERVAULT, "003");
+      simpleTrade();
+
+      simpleTrade();
     }
 }

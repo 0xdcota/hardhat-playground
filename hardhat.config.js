@@ -50,6 +50,7 @@ const mainnetUrl = `https://mainnet.infura.io/v3/${process.env.INFURA_ID}`;
 
 // Configure fork network, by defining in .env file 
 const forkNetwork = process.env.FORK_NETWORK;
+console.log("forkNetwork", forkNetwork)
 
 let forkUrl = '';
 
@@ -59,12 +60,16 @@ switch (forkNetwork) {
     break;
   case 'ropsten':
     forkUrl = `https://ropsten.infura.io/v3/${process.env.INFURA_ID}`;
+    break;
   case 'fantom':
     forkUrl = 'https://rpc.ftm.tools/';
+    break;
   case 'polygon':
-    forkUrl = 'https://rpc-mainnet.maticvigil.com/';
+    forkUrl = `https://polygon-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_KEY}`;
+    break;
   case 'bsc':
     forkUrl = 'https://bsc-dataseed.binance.org/';
+    break;
   default:
     forkUrl = mainnetUrl;
 }
@@ -86,6 +91,7 @@ switch (forkNetwork) {
 // Identify in .env the netowrk to interact for deployments or scripts:
 //
 const defaultNetwork = !process.env.DEFAULT_NETWORK ? localhost : process.env.DEFAULT_NETWORK;
+console.log(forkUrl);
 
 /**
  * @type import('hardhat/config').HardhatUserConfig
