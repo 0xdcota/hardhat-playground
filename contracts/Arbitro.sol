@@ -76,17 +76,17 @@ contract Arbitro is Ownable, IFlashLoanRecipient {
       info.amountIn = amountIn_;
     }
 
-    function simpleTrade(
+    function _simpleTrade(
       address exchangeRouter,
       address tokenIn,
       address tokenOut,
       uint256 amountIn,
       uint256 amountOutMin
-    ) external {
+    ) internal returns (uint256 amount) {
       address[] memory path = new address[](2); 
       path[0] = tokenIn;
       path[1] = tokenOut;
-      IUniswapV2Router02(exchangeRouter).swapExactTokensForTokens(
+      uint256[] memory amounts = IUniswapV2Router02(exchangeRouter).swapExactTokensForTokens(
         amountIn,
         amountOutMin,
         path,
@@ -94,14 +94,21 @@ contract Arbitro is Ownable, IFlashLoanRecipient {
         // solhint-disable-next-line
         block.timestamp
       );
+      amount = amounts[1];
     }
 
     function initiateFlashLoan(FlashLoanOps memory info) external onlyOwner {
       require(_dataHash == "", "001");
       _dataHash = keccak256(abi.encode(info));
+
+      IERC20[] memory tokens = new IERC20[](1);
+      uint256[] memory amounts = new uint256[](1);
+      tokens[0] = IERC20(info.tokenIn);
+      amounts[0] = info.amountIn;
+
       IBalancerVault(_BALANCERVAULT).flashLoan(
-          address(this),
-          info.tokenIn,
+          IFlashLoanRecipient(address(this)),
+          tokens,
           amounts,
           abi.encode(info)
       );
@@ -113,11 +120,27 @@ contract Arbitro is Ownable, IFlashLoanRecipient {
         uint256[] memory feeAmounts,
         bytes memory userData
     ) external override {
-      FlashLoanOps memory info = abi.decode(userData, FlashLoanOps);
-      require( _dataHash == keccak256(abi.encode(_info)), "002");
+      tokens;
+      amounts;
+      FlashLoanOps memory info = abi.decode(userData, (FlashLoanOps));
+      require( _dataHash == keccak256(abi.encode(info)), "002");
       require(msg.sender == _BALANCERVAULT, "003");
-      simpleTrade();
+      uint256 receivedAmount = _simpleTrade(
+        info.buyRouter,
+        info.tokenIn,
+        info.tokenOut,
+        info.amountIn,
+        info.amountOut
+      );
 
-      simpleTrade();
+      uint256 tokenBack = _simpleTrade(
+        info.sellRouter,
+        info.tokenOut,
+        info.tokenIn,
+        receivedAmount,
+        info.amountIn
+      );
+
+      require(tokenBack > info.amountIn + feeAmounts[0], "004");
     }
 }
