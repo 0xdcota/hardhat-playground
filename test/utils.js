@@ -14,6 +14,11 @@ const ASSETS = {
       address: "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
       name: "wmatic",
       decimals: 18
+    },
+    frax: {
+      address: "0x45c32fA6DF82ead1e2EF74d17b76547EDdFaFF89",
+      name: "frax",
+      decimals: 18
     }
   }
 }

@@ -13,7 +13,6 @@ import "@openzeppelin/contracts/interfaces/IERC20.sol";
 import "hardhat/console.sol";
 
 contract Arbitro is Ownable, IFlashLoanRecipient {
-
     struct TradeInfo {
         address tokenIn;
         address tokenOut;
@@ -21,16 +20,17 @@ contract Arbitro is Ownable, IFlashLoanRecipient {
     }
 
     struct FlashLoanOps {
-      address tokenIn;
-      address tokenOut;
-      uint256 amountIn;
-      uint256 amountOut;
-      uint256 expectRev;
-      address buyRouter;
-      address sellRouter;
+        address tokenIn;
+        address tokenOut;
+        uint256 amountIn;
+        uint256 amountOut;
+        address buyRouter;
+        address sellRouter;
+        address sellPair;
     }
 
-    address private constant _BALANCERVAULT = 0xBA12222222228d8Ba445958a75a0704d566BF2C8;
+    address private constant _BALANCERVAULT =
+        0xBA12222222228d8Ba445958a75a0704d566BF2C8;
     bytes32 private _dataHash;
 
     function withdraw(address receiver, address token) external onlyOwner {
@@ -41,77 +41,89 @@ contract Arbitro is Ownable, IFlashLoanRecipient {
     }
 
     function getQuote(
-      address exchangeRouter,
-      address exchangePair,
-      TradeInfo memory info
-    ) public view returns(uint256 amountOut) {
-      (uint256 reserve0, uint256 reserve1, )= IUniswapV2Pair(exchangePair).getReserves();
-      uint reserveIn;
-      uint reserveOut;
-      if (IUniswapV2Pair(exchangePair).token0() == info.tokenIn) {
-        reserveIn = reserve0;
-        reserveOut = reserve1;
-      } else {
-        reserveIn = reserve1;
-        reserveOut = reserve0;
-      }
-      amountOut = IUniswapV2Router02(exchangeRouter).quote(
-        info.amountIn,
-        reserveIn,
-        reserveOut
-      );
+        address exchangeRouter,
+        address exchangePair,
+        TradeInfo memory info
+    ) public view returns (uint256 amountOut) {
+        (uint256 reserve0, uint256 reserve1, ) = IUniswapV2Pair(exchangePair)
+            .getReserves();
+        uint256 reserveIn;
+        uint256 reserveOut;
+        if (IUniswapV2Pair(exchangePair).token0() == info.tokenIn) {
+            reserveIn = reserve0;
+            reserveOut = reserve1;
+        } else {
+            reserveIn = reserve1;
+            reserveOut = reserve0;
+        }
+        amountOut = IUniswapV2Router02(exchangeRouter).getAmountOut(
+            info.amountIn,
+            reserveIn,
+            reserveOut
+        );
     }
 
-    function getPairAddress(TradeInfo memory info, address exchangefactory) public view returns(address pair) {
-      pair = IUniswapV2Factory(exchangefactory).getPair(info.tokenIn, info.tokenOut);
+    function getPairAddress(TradeInfo memory info, address exchangefactory)
+        public
+        view
+        returns (address pair)
+    {
+        pair = IUniswapV2Factory(exchangefactory).getPair(
+            info.tokenIn,
+            info.tokenOut
+        );
     }
 
     function encodeTradeInfo(
-      address tokenIn_,
-      address tokenOut_,
-      uint128 amountIn_
-    ) public pure returns(TradeInfo memory info) {
-      info.tokenIn = tokenIn_;
-      info.tokenOut = tokenOut_;
-      info.amountIn = amountIn_;
+        address tokenIn_,
+        address tokenOut_,
+        uint128 amountIn_
+    ) public pure returns (TradeInfo memory info) {
+        info.tokenIn = tokenIn_;
+        info.tokenOut = tokenOut_;
+        info.amountIn = amountIn_;
     }
 
     function _simpleTrade(
-      address exchangeRouter,
-      address tokenIn,
-      address tokenOut,
-      uint256 amountIn,
-      uint256 amountOutMin
+        address exchangeRouter,
+        address tokenIn,
+        address tokenOut,
+        uint256 amountIn,
+        uint256 amountOutMin
     ) internal returns (uint256 amount) {
-      address[] memory path = new address[](2); 
-      path[0] = tokenIn;
-      path[1] = tokenOut;
-      uint256[] memory amounts = IUniswapV2Router02(exchangeRouter).swapExactTokensForTokens(
-        amountIn,
-        amountOutMin,
-        path,
-        address(this),
-        // solhint-disable-next-line
-        block.timestamp
-      );
-      amount = amounts[1];
+        address[] memory path = new address[](2);
+        path[0] = tokenIn;
+        path[1] = tokenOut;
+        console.log("amountOutMin", amountOutMin);
+        uint256[] memory amounts = IUniswapV2Router02(exchangeRouter)
+            .swapExactTokensForTokens(
+                amountIn,
+                amountOutMin,
+                path,
+                address(this),
+                // solhint-disable-next-line
+                block.timestamp
+            );
+        amount = amounts[1];
     }
 
-    function initiateFlashLoan(FlashLoanOps memory info) external onlyOwner {
-      require(_dataHash == "", "001");
-      _dataHash = keccak256(abi.encode(info));
+    function initiateFlashLoan(
+        FlashLoanOps calldata flashinfo
+    ) external onlyOwner {
+        require(_dataHash == "", "001");
+        _dataHash = keccak256(abi.encode(flashinfo));
 
-      IERC20[] memory tokens = new IERC20[](1);
-      uint256[] memory amounts = new uint256[](1);
-      tokens[0] = IERC20(info.tokenIn);
-      amounts[0] = info.amountIn;
+        IERC20[] memory tokens = new IERC20[](1);
+        uint256[] memory amounts = new uint256[](1);
+        tokens[0] = IERC20(flashinfo.tokenIn);
+        amounts[0] = flashinfo.amountIn;
 
-      IBalancerVault(_BALANCERVAULT).flashLoan(
-          IFlashLoanRecipient(address(this)),
-          tokens,
-          amounts,
-          abi.encode(info)
-      );
+        IBalancerVault(_BALANCERVAULT).flashLoan(
+            IFlashLoanRecipient(address(this)),
+            tokens,
+            amounts,
+            abi.encode(flashinfo)
+        );
     }
 
     function receiveFlashLoan(
@@ -120,27 +132,48 @@ contract Arbitro is Ownable, IFlashLoanRecipient {
         uint256[] memory feeAmounts,
         bytes memory userData
     ) external override {
-      tokens;
-      amounts;
-      FlashLoanOps memory info = abi.decode(userData, (FlashLoanOps));
-      require( _dataHash == keccak256(abi.encode(info)), "002");
-      require(msg.sender == _BALANCERVAULT, "003");
-      uint256 receivedAmount = _simpleTrade(
-        info.buyRouter,
-        info.tokenIn,
-        info.tokenOut,
-        info.amountIn,
-        info.amountOut
-      );
+        tokens;
+        amounts;
+        FlashLoanOps memory flashinfo = abi.decode(
+            userData,
+            (FlashLoanOps)
+        );
+        require(_dataHash == keccak256(abi.encode(flashinfo)), "002");
+        require(msg.sender == _BALANCERVAULT, "003");
 
-      uint256 tokenBack = _simpleTrade(
-        info.sellRouter,
-        info.tokenOut,
-        info.tokenIn,
-        receivedAmount,
-        info.amountIn
-      );
+        IERC20(flashinfo.tokenIn).approve(
+            flashinfo.buyRouter,
+            flashinfo.amountIn
+        );
+        uint256 receivedAmount = _simpleTrade(
+            flashinfo.buyRouter,
+            flashinfo.tokenIn,
+            flashinfo.tokenOut,
+            flashinfo.amountIn,
+            flashinfo.amountOut
+        );
 
-      require(tokenBack > info.amountIn + feeAmounts[0], "004");
+        uint256 tradeExpected = getQuote(
+            flashinfo.sellRouter,
+            flashinfo.sellPair,
+            encodeTradeInfo(flashinfo.tokenOut, flashinfo.tokenIn, uint128(receivedAmount))
+        );
+
+        IERC20(flashinfo.tokenOut).approve(
+            flashinfo.sellRouter,
+            receivedAmount
+        );
+        uint256 tokenBack = _simpleTrade(
+            flashinfo.sellRouter,
+            flashinfo.tokenOut,
+            flashinfo.tokenIn,
+            receivedAmount,
+            tradeExpected
+        );
+
+        console.log("tokenBack", tokenBack, "flashinfo.amountIn", flashinfo.amountIn);
+        console.log("feeAmounts[0]",feeAmounts[0]);
+
+        require(tokenBack > flashinfo.amountIn + feeAmounts[0], "004");
     }
 }
