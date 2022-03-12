@@ -141,6 +141,8 @@ contract Arbitro is Ownable, IFlashLoanRecipient {
         require(_dataHash == keccak256(abi.encode(flashinfo)), "002");
         require(msg.sender == _BALANCERVAULT, "003");
 
+        console.log("flashinfo.amountIn", flashinfo.amountIn);
+
         IERC20(flashinfo.tokenIn).approve(
             flashinfo.buyRouter,
             flashinfo.amountIn
@@ -152,12 +154,16 @@ contract Arbitro is Ownable, IFlashLoanRecipient {
             flashinfo.amountIn,
             flashinfo.amountOut
         );
+        console.log("First trade done");
+        console.log("receivedAmount", receivedAmount);
 
         uint256 tradeExpected = getQuote(
             flashinfo.sellRouter,
             flashinfo.sellPair,
             encodeTradeInfo(flashinfo.tokenOut, flashinfo.tokenIn, uint128(receivedAmount))
         );
+
+        console.log("tradeExpected", tradeExpected);
 
         IERC20(flashinfo.tokenOut).approve(
             flashinfo.sellRouter,
@@ -170,8 +176,7 @@ contract Arbitro is Ownable, IFlashLoanRecipient {
             receivedAmount,
             tradeExpected
         );
-
-        console.log("tokenBack", tokenBack, "flashinfo.amountIn", flashinfo.amountIn);
+        console.log("tokenBack", tokenBack);
         console.log("feeAmounts[0]",feeAmounts[0]);
 
         require(tokenBack > flashinfo.amountIn + feeAmounts[0], "004");
