@@ -6,9 +6,12 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "./interfaces/IUniswapV2Pair.sol";
 import "./interfaces/IUniswapV2Router02.sol";
 import "./interfaces/IUniswapV2Factory.sol";
+import "./interfaces/IQuoter.sol";
+import "./interfaces/ISwapRouter.sol";
+import "./interfaces/IUniswapV3Factory.sol";
 import "./interfaces/IBalancerVault.sol";
 import "./interfaces/IFlashLoanRecipient.sol";
-import "@openzeppelin/contracts/interfaces/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import "hardhat/console.sol";
 
@@ -17,6 +20,7 @@ contract Arbitro is Ownable, IFlashLoanRecipient {
         address tokenIn;
         address tokenOut;
         uint256 amountIn;
+        uint24 poolFee;
     }
 
     struct FlashLoanOps {
@@ -24,13 +28,21 @@ contract Arbitro is Ownable, IFlashLoanRecipient {
         address tokenOut;
         uint256 amountIn;
         uint256 amountOut;
-        address buyRouter;
+        uint24 poolFee;
         address sellRouter;
-        address sellPair;
+        address buyRouter;
+        address buyPair;
     }
 
     address private constant _BALANCERVAULT =
         0xBA12222222228d8Ba445958a75a0704d566BF2C8;
+    ISwapRouter private constant _IUNISWAPV3SWAPPER =
+        ISwapRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
+    IQuoter private constant _IUNISWAPV3QUOTER =
+        IQuoter(0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6);
+    IUniswapV3Factory private constant _IUNISWAPV3FACTORY =
+        IUniswapV3Factory(0x1F98431c8aD98523631AE4a59f267346ea31F984);
+
     bytes32 private _dataHash;
 
     function withdraw(address receiver, address token) external onlyOwner {
@@ -44,44 +56,80 @@ contract Arbitro is Ownable, IFlashLoanRecipient {
         address exchangeRouter,
         address exchangePair,
         TradeInfo memory info
-    ) public view returns (uint256 amountOut) {
-        (uint256 reserve0, uint256 reserve1, ) = IUniswapV2Pair(exchangePair)
-            .getReserves();
-        uint256 reserveIn;
-        uint256 reserveOut;
-        if (IUniswapV2Pair(exchangePair).token0() == info.tokenIn) {
-            reserveIn = reserve0;
-            reserveOut = reserve1;
+    ) public returns (uint256 amountOut) {
+        if (exchangeRouter == address(_IUNISWAPV3SWAPPER)) {
+            amountOut = _getQuoteUniswapV3(info);
         } else {
-            reserveIn = reserve1;
-            reserveOut = reserve0;
+            (uint256 reserve0, uint256 reserve1, ) = IUniswapV2Pair(
+                exchangePair
+            ).getReserves();
+            uint256 reserveIn;
+            uint256 reserveOut;
+            if (IUniswapV2Pair(exchangePair).token0() == info.tokenIn) {
+                reserveIn = reserve0;
+                reserveOut = reserve1;
+            } else {
+                reserveIn = reserve1;
+                reserveOut = reserve0;
+            }
+            amountOut = IUniswapV2Router02(exchangeRouter).getAmountOut(
+                info.amountIn,
+                reserveIn,
+                reserveOut
+            );
         }
-        amountOut = IUniswapV2Router02(exchangeRouter).getAmountOut(
+    }
+
+    function _getQuoteUniswapV3(TradeInfo memory info)
+        internal
+        returns (uint256 amountOut)
+    {
+        amountOut = _IUNISWAPV3QUOTER.quoteExactInputSingle(
+            info.tokenIn,
+            info.tokenOut,
+            info.poolFee,
             info.amountIn,
-            reserveIn,
-            reserveOut
+            0
         );
     }
 
-    function getPairAddress(TradeInfo memory info, address exchangefactory)
+    function getPairAddress(TradeInfo calldata info, address exchangefactory)
         public
         view
         returns (address pair)
     {
-        pair = IUniswapV2Factory(exchangefactory).getPair(
+        if (exchangefactory == address(_IUNISWAPV3FACTORY)) {
+            pair = _getPairAddressUniswapV3(info);
+        } else {
+            pair = IUniswapV2Factory(exchangefactory).getPair(
+                info.tokenIn,
+                info.tokenOut
+            );
+        }
+    }
+
+    function _getPairAddressUniswapV3(TradeInfo calldata info)
+        internal
+        view
+        returns (address pair)
+    {
+        pair = _IUNISWAPV3FACTORY.getPool(
             info.tokenIn,
-            info.tokenOut
+            info.tokenOut,
+            info.poolFee
         );
     }
 
     function encodeTradeInfo(
         address tokenIn_,
         address tokenOut_,
-        uint128 amountIn_
+        uint128 amountIn_,
+        uint24 poolFee_
     ) public pure returns (TradeInfo memory info) {
         info.tokenIn = tokenIn_;
         info.tokenOut = tokenOut_;
         info.amountIn = amountIn_;
+        info.poolFee = poolFee_;
     }
 
     function _simpleTrade(
@@ -89,27 +137,63 @@ contract Arbitro is Ownable, IFlashLoanRecipient {
         address tokenIn,
         address tokenOut,
         uint256 amountIn,
-        uint256 amountOutMin
+        uint256 amountOutMin,
+        uint24 poolFee
     ) internal returns (uint256 amount) {
-        address[] memory path = new address[](2);
-        path[0] = tokenIn;
-        path[1] = tokenOut;
-        console.log("amountOutMin", amountOutMin);
-        uint256[] memory amounts = IUniswapV2Router02(exchangeRouter)
-            .swapExactTokensForTokens(
+        if (exchangeRouter == address(_IUNISWAPV3SWAPPER)) {
+            amount = _simpleTradeUniswapV3(
+                tokenIn,
+                tokenOut,
                 amountIn,
                 amountOutMin,
-                path,
-                address(this),
-                // solhint-disable-next-line
-                block.timestamp
+                poolFee
             );
-        amount = amounts[1];
+        } else {
+            address[] memory path = new address[](2);
+            path[0] = tokenIn;
+            path[1] = tokenOut;
+            console.log("amountOutMin", amountOutMin);
+            uint256[] memory amounts = IUniswapV2Router02(exchangeRouter)
+                .swapExactTokensForTokens(
+                    amountIn,
+                    amountOutMin,
+                    path,
+                    address(this),
+                    // solhint-disable-next-line
+                    block.timestamp
+                );
+            amount = amounts[1];
+            console.log("regular trade complete");
+        }
     }
 
-    function initiateFlashLoan(
-        FlashLoanOps calldata flashinfo
-    ) external onlyOwner {
+    function _simpleTradeUniswapV3(
+        address tokenIn,
+        address tokenOut,
+        uint256 amountIn,
+        uint256 amountOutMin,
+        uint24 poolFee
+    ) internal returns (uint256 amount) {
+        ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
+            .ExactInputSingleParams({
+                tokenIn: tokenIn,
+                tokenOut: tokenOut,
+                fee: poolFee,
+                recipient: address(this),
+                // solhint-disable-next-line
+                deadline: block.timestamp,
+                amountIn: amountIn,
+                amountOutMinimum: amountOutMin,
+                sqrtPriceLimitX96: 0
+            });
+        amount = _IUNISWAPV3SWAPPER.exactInputSingle(params);
+        console.log("uniswapv3 trade complete");
+    }
+
+    function initiateFlashLoan(FlashLoanOps calldata flashinfo)
+        external
+        onlyOwner
+    {
         require(_dataHash == "", "001");
         _dataHash = keccak256(abi.encode(flashinfo));
 
@@ -134,51 +218,63 @@ contract Arbitro is Ownable, IFlashLoanRecipient {
     ) external override {
         tokens;
         amounts;
-        FlashLoanOps memory flashinfo = abi.decode(
-            userData,
-            (FlashLoanOps)
-        );
+        FlashLoanOps memory flashinfo = abi.decode(userData, (FlashLoanOps));
         require(_dataHash == keccak256(abi.encode(flashinfo)), "002");
+        delete _dataHash;
         require(msg.sender == _BALANCERVAULT, "003");
 
         console.log("flashinfo.amountIn", flashinfo.amountIn);
 
         IERC20(flashinfo.tokenIn).approve(
-            flashinfo.buyRouter,
+            flashinfo.sellRouter,
             flashinfo.amountIn
         );
+
         uint256 receivedAmount = _simpleTrade(
-            flashinfo.buyRouter,
+            flashinfo.sellRouter,
             flashinfo.tokenIn,
             flashinfo.tokenOut,
             flashinfo.amountIn,
-            flashinfo.amountOut
+            flashinfo.amountOut,
+            flashinfo.poolFee
         );
         console.log("First trade done");
         console.log("receivedAmount", receivedAmount);
+        uint bal1 = IERC20(flashinfo.tokenOut).balanceOf(address(this));
+        console.log("bal1",bal1);
 
         uint256 tradeExpected = getQuote(
-            flashinfo.sellRouter,
-            flashinfo.sellPair,
-            encodeTradeInfo(flashinfo.tokenOut, flashinfo.tokenIn, uint128(receivedAmount))
+            flashinfo.buyRouter,
+            flashinfo.buyPair,
+            encodeTradeInfo(
+                flashinfo.tokenOut,
+                flashinfo.tokenIn,
+                uint128(receivedAmount),
+                flashinfo.poolFee
+            )
         );
 
         console.log("tradeExpected", tradeExpected);
 
         IERC20(flashinfo.tokenOut).approve(
-            flashinfo.sellRouter,
+            flashinfo.buyRouter,
             receivedAmount
         );
+
         uint256 tokenBack = _simpleTrade(
-            flashinfo.sellRouter,
+            flashinfo.buyRouter,
             flashinfo.tokenOut,
             flashinfo.tokenIn,
             receivedAmount,
-            tradeExpected
+            0,
+            flashinfo.poolFee
         );
         console.log("tokenBack", tokenBack);
-        console.log("feeAmounts[0]",feeAmounts[0]);
+        uint bal2 = IERC20(flashinfo.tokenIn).balanceOf(address(this));
+        console.log("bal2",bal2);
 
-        require(tokenBack > flashinfo.amountIn + feeAmounts[0], "004");
+        console.log("feeAmounts[0]", feeAmounts[0]);
+
+        require(bal2 > flashinfo.amountIn + feeAmounts[0], "004");
     }
 }

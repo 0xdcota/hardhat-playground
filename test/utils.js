@@ -39,7 +39,13 @@ const ASSETS = {
       address: "0xD6DF932A45C0f255f85145f286eA0b292B21C90B",
       name: "aave",
       decimals: 18
+    },
+    qi: {
+      address: "0x580A84C73811E1839F75d86d75d88cCa0c241fF4",
+      name: "QiDao",
+      decimals: 18
     }
+
   }
 }
 
