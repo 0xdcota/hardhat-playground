@@ -113,6 +113,12 @@ module.exports = {
         [process.env.PRIVATE_KEY] : 
         { mnemonic: mnemonic() },
     },
+    rinkeby: {
+      url: `https://rinkeby.infura.io/v3/${process.env.INFURA_ID}`,
+      accounts: process.env.PRIVATE_KEY ? 
+        [process.env.PRIVATE_KEY] : 
+        { mnemonic: mnemonic() },
+    },
     kovan: {
       url: `https://kovan.infura.io/v3/${process.env.INFURA_ID}`,
       accounts: process.env.PRIVATE_KEY ? 
@@ -143,6 +149,13 @@ module.exports = {
         [process.env.PRIVATE_KEY] : 
         { mnemonic: mnemonic() },
     },
+    mumbai: {
+      url: `https://matic-mumbai.chainstacklabs.com`,
+      accounts: process.env.PRIVATE_KEY ? 
+        [process.env.PRIVATE_KEY] : 
+        { mnemonic: mnemonic() },
+    },
+
   },
   gasReporter: {
     enabled: process.env.REPORT_GAS !== undefined,
