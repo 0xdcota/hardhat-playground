@@ -756,4 +756,9 @@ contract OmniChainToken is Ownable, ERC20, ILayerZeroReceiver {
         // mint the tokens back into existence, to the toAddr from the message payload
         _mint(toAddr, qty);
     }
+
+    function setEndpoint(address _endpoint) external onlyOwner {
+        require(_endpoint != address(0), "No zero address!");
+        endpoint = ILayerZeroEndpoint(_endpoint);
+    }
 }
