@@ -8,6 +8,7 @@ typechain
 #Hardhat files
 cache
 artifacts
+.openzeppelin/unknown-31337.json
 
 #Text files
 *.txt
